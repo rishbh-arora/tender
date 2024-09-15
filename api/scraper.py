@@ -1,42 +1,63 @@
 import time
 from .drivers import Selenium_Driver, Captcha
+from .utils.catpcha import solve_captcha
+from .utils.storage import upload_to_gcs
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import os
+from tender.settings.base import DOWNLOAD_DIRECTORY, GCS_TENDER_ZIP_BUCKET
 
 driver = Selenium_Driver.get_driver()
 solver = Captcha.get_solver()
+wait = WebDriverWait(driver, 3)
+
+def wait_for_download_completion(download_dir):
+    while any([filename.endswith(".crdownload") for filename in os.listdir(download_dir)]):
+        time.sleep(1)
+
+def get_latest_file(download_dir):
+    files = os.listdir(download_dir)
+    paths = [os.path.join(download_dir, file) for file in files if not file.startswith('.')]
+    print(paths)
+    a = max(paths, key=os.path.getctime)
+    print(a)
+    return a
+
+def handle_zip_captcha(url, tender_id):
+    print("getting that page");
+    driver.get(url)
+    solve_captcha(driver, solver)
+    submit = driver.find_element(By.XPATH, value='//*[@id="Submit"]').click()
+    try:
+        zip_download = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="DirectLink_7"]')))
+    except:
+        try:
+            zip_download = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="DirectLink_8"]')))
+        except:
+            print("Captcha failed")
+            return False
+        else:
+            print("Zip download found from 7")
+            zip_download.click()
+            return True
+    else:
+        print("Zip download found from 7")
+        zip_download.click()
+    wait_for_download_completion(DOWNLOAD_DIRECTORY)
+    return upload_to_gcs(get_latest_file(DOWNLOAD_DIRECTORY), GCS_TENDER_ZIP_BUCKET , f"{tender_id}.zip")
 
 def scrape_data():
     driver.get("https://eprocure.gov.in/eprocure/app?page=FrontEndAdvancedSearch&service=page")
 
-    captcha_base64 = driver.find_element(By.XPATH, value='//*[@id="captchaImage"]').screenshot_as_base64
-
-    options = {
-        "phrase": False,
-        "caseSensitive": True,
-        "numeric": 0,
-        "calc": False,
-        "minLength": 1,
-        "maxLength": 5,
-        "hintText": "enter the text you see on the image",
-        "language": "en"
-    }
-
     try:
         while True:
-            # result = {"code": input()}
-            result = solver.normal(captcha_base64, **options)
-
-            wait = WebDriverWait(driver, 3)
             filter_button = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="submit"]')))
-
-            captchaText = driver.find_element(By.XPATH, value='//*[@id="captchaText"]')
             Select(driver.find_element(By.ID, value="TenderType")).select_by_value("1")
-            captchaText.send_keys(result['code'])
+            solve_captcha(driver, solver)
             
             filter_button.click()
-            time.sleep(3)
+            time.sleep(3)       
             try:
                 search_result_check = driver.find_element(By.XPATH, value='//*[@id="AdvancedSearch"]')
                 break
@@ -56,7 +77,7 @@ def scrape_data():
             next_button.click()
         
         details = []
-        for link in detail_pages[:10]:
+        for link in detail_pages[:3]:
             tender = {}
             top_base_path = "/html/body/div/table/tbody/tr[2]/td/table/tbody/tr/td[2]/table/tbody/tr[4]/td/table[2]/tbody/tr/td/table/tbody/tr[2]/td/table/tbody/"
             driver.get(link)
@@ -69,13 +90,12 @@ def scrape_data():
                 print(f"Documents not available for {tender.get('Tender Reference Number')}")
                 tender["zip"] = None
             details.append(tender)
+        print(details)
         return True, details
     
     except Exception as e:
+        print(e)
         return False, e
-    
-    finally:
-        driver.quit()
 
 
     #Organisation Chain:      /html/body/div/table/tbody/tr[2]/td/table/tbody/tr/td[2]/table/tbody/tr[4]/td/table[2]/tbody/tr/td/table/tbody/tr[2]/td/table/tbody/tr[1]/td[1]/b

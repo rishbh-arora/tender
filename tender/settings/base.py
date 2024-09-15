@@ -94,5 +94,6 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+DOWNLOAD_DIRECTORY = "/home/rishab/Desktop/lunux/Code/repos/tender/tender/zip"
 
 GCS_TENDER_ZIP_BUCKET = os.getenv("GCS_TENDER_ZIP_BUCKET")

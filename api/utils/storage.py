@@ -12,7 +12,7 @@ def download_file(url):
 def upload_to_gcs(file_stream, bucket_name, destination_blob_name):
     bucket = client.bucket(bucket_name)
     blob = bucket.blob(destination_blob_name)
-    blob.upload_from_file(file_stream, content_type='application/zip')
+    blob.upload_from_filename(file_stream, content_type='application/zip')
     blob.make_public()
     print(f'File {destination_blob_name} uploaded to {bucket_name}.')
     return blob.public_url
